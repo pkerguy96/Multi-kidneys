@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('xrays', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('doctor_id');
-            $table->unsignedBigInteger('patient_id');
+            $table->unsignedBigInteger('patient_id'); 
             $table->unsignedBigInteger('operation_id')->nullable();
             $table->string('xray_type')->nullable();
             $table->string('xray_name')->nullable();

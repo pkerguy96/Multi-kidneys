@@ -426,8 +426,8 @@ class DashboardKpisController extends Controller
     // hna wslt *******************************************
     public function calculateAgePercentage()
     {
-
-        $ageGroups = Patient::selectRaw('CASE 
+        $doctorId = $this->checkUserRole();
+        $ageGroups = Patient::where('doctor_id', $doctorId)->selectRaw('CASE 
                                 WHEN TIMESTAMPDIFF(YEAR, date, CURDATE()) <= 20 THEN "0-20" 
                                 WHEN TIMESTAMPDIFF(YEAR, date, CURDATE()) <= 30 THEN "21-30" 
                                 WHEN TIMESTAMPDIFF(YEAR, date, CURDATE()) <= 40 THEN "31-40" 
@@ -438,10 +438,7 @@ class DashboardKpisController extends Controller
             ->groupBy('age_group')
             ->orderByRaw('CAST(SUBSTRING(age_group, 1, 2) AS SIGNED)')
             ->get();
-
-        $totalPatients = Patient::count();
-
-        $percentageData = $ageGroups->map(function ($group) use ($totalPatients) {
+        $percentageData = $ageGroups->map(function ($group) {
 
             return [
                 'age_group' => $group->age_group,
@@ -449,18 +446,18 @@ class DashboardKpisController extends Controller
 
             ];
         });
-
         return response()->json(['data' => $percentageData]);
     }
     public function TotalPatients()
     {
-
-        $data = Patient::count();
+        $doctorId = $this->checkUserRole();
+        $data = Patient::where('doctor_id', $doctorId)->count();
         return response()->json(['data' => $data]);
     }
     public function countPatientsByReferral()
     {
-        $patients = Patient::select('referral')->get();
+        $doctorId = $this->checkUserRole();
+        $patients = Patient::where('doctor_id', $doctorId)->select('referral')->get();
 
         $referralCounts = [];
 
@@ -574,67 +571,48 @@ class DashboardKpisController extends Controller
 
     public function PatientsDebt(Request $request)
     {
-        Log::info('Request data:', $request->all());
-
+        $doctorId = $this->checkUserRole();
         $startDate = Carbon::parse($request->date)->startOfDay();
         $endDate = Carbon::parse($request->date2)->endOfDay();
-
-        Log::info('Start Date:', [$startDate]);
-        Log::info('End Date:', [$endDate]);
-
         $hospitals = $request->hospitals;
 
+        // Base query to filter by date and doctor_id using operation relationship
+        $query = Payment::query()
+            ->join('operations', 'operations.id', '=', 'payments.operation_id') // Join with operations table
+            ->where('operations.doctor_id', $doctorId) // Scope by doctor_id
+            ->whereBetween('payments.created_at', [$startDate, $endDate]); // Filter by date range
+
         if ($hospitals === "tout") {
-            Log::info('Fetching all payments within date range...');
-
-            // Fetch all payments within the date range for all operations
-            $payments = Payment::with(['operation.patient', 'operation.operationdetails'])
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->get();
-
-            Log::info('Fetched All Payments:', $payments->toArray());
+            // Fetch all payments linked to the doctor
+            $payments = $query->get(['payments.*']); // Fetch only payment fields
         } elseif (is_array($hospitals) && count($hospitals) > 0) {
-            Log::info('Fetching payments via outsourceOperation for specific hospital IDs:', $hospitals);
-
-            // Fetch payments via outsourceOperation for specific hospitals
-            $payments = Payment::with([
-                'operation.patient',
-                'operation.operationdetails',
-                'operation.externalOperations',
-            ])
-                ->whereHas('operation.externalOperations', function ($query) use ($hospitals) {
-                    $query->whereIn('hospital_id', $hospitals);
-                })
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->get();
-
-            Log::info('Fetched Payments via outsourceOperation:', $payments->toArray());
+            // Fetch payments linked to specific hospitals
+            $payments = $query
+                ->join('external_operations', 'external_operations.operation_id', '=', 'operations.id') // Join with external_operations
+                ->whereIn('external_operations.hospital_id', $hospitals) // Filter by hospitals
+                ->get(['payments.*']); // Fetch only payment fields
         } else {
-            Log::info('No valid hospital filter provided.');
-
-            // Fetch all payments not linked to outsourceOperation
-            $payments = Payment::with(['operation.patient', 'operation.operationdetails'])
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->whereDoesntHave('operation.externalOperations')
-                ->get();
+            // Fetch all payments not linked to outsource operations
+            $payments = $query
+                ->whereDoesntHave('operation.externalOperations') // Filter operations without externalOperations
+                ->get(['payments.*']); // Fetch only payment fields
         }
 
-        // Transform the payments data into the appropriate resource collection
         return SearchOperationDebtResource::collection($payments);
     }
     public function getPaymentKpi()
     {
-        // Aggregate total cost per operation from the `operations` table
+        $doctorId = $this->checkUserRole();
         $operations = DB::table('operations')
             ->select('id as operation_id', DB::raw('SUM(total_cost) as total_operation_cost'))
+            ->where('doctor_id', $doctorId) // Scope by doctor_id
             ->groupBy('id');
-
-        // Aggregate total payments per operation from the `payments` table
         $payments = DB::table('payments')
-            ->select('operation_id', DB::raw('SUM(amount_paid) as total_amount_paid'))
-            ->groupBy('operation_id');
+            ->join('operations', 'operations.id', '=', 'payments.operation_id') // Join payments with operations
+            ->select('payments.operation_id', DB::raw('SUM(amount_paid) as total_amount_paid'))
+            ->where('operations.doctor_id', $doctorId) // Scope payments by doctor_id via operation
+            ->groupBy('payments.operation_id');
 
-        // Join aggregated data from operations and payments
         $results = DB::table(DB::raw("({$operations->toSql()}) as operations"))
             ->mergeBindings($operations)
             ->leftJoinSub($payments, 'payments', 'operations.operation_id', '=', 'payments.operation_id')

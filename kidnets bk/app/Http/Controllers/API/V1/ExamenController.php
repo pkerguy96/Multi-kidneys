@@ -8,23 +8,24 @@ use App\Models\Examen;
 use App\Models\Examenpreferences;
 use Illuminate\Http\Request;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 
 class ExamenController extends Controller
 {
+    use UserRoleCheck;
     use HttpResponses;
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
+        $doctorId = $this->checkUserRole();
+
         try {
             // Eager-load xray_category relationship
-            $xrays = Examenpreferences::with(['examen_category' => function ($query) {
+            $xrays = Examenpreferences::where('doctor_id', $doctorId)->with(['examen_category' => function ($query) {
                 $query->withTrashed();
             }])->get();
-
-
-
             return ExamenPreferenceResource::collection($xrays);
         } catch (\Exception $e) {
             return response()->json([
@@ -37,8 +38,10 @@ class ExamenController extends Controller
 
     public function getExamenPreferencesWithCategories()
     {
+        $doctorId = $this->checkUserRole();
+
         try {
-            $xrayPreferences = Examenpreferences::with(['examen_category' => function ($query) {
+            $xrayPreferences = Examenpreferences::where('doctor_id', $doctorId)->with(['examen_category' => function ($query) {
                 $query->withTrashed();
             }])->get();
 
@@ -66,8 +69,10 @@ class ExamenController extends Controller
 
     public function getexamenCategorys()
     {
+        $doctorId = $this->checkUserRole();
+
         try {
-            $categorys = Examen::select('id', 'name')->get();
+            $categorys = Examen::where('doctor_id', $doctorId)->select('id', 'name')->get();
             return $this->success($categorys, 'success', 200);
         } catch (\Throwable $th) {
             return $this->success($th->getMessage(), 'Something went wrong', 500);
@@ -78,12 +83,11 @@ class ExamenController extends Controller
     public function deleteExamenCategory($id)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Find the category by ID
-            $category = Examen::findOrFail($id);
-
+            $category = Examen::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             // Delete the category
             $category->delete();
-
             // Return a success response
             return $this->success(null, 'Catégorie supprimée avec succès.', 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -104,8 +108,10 @@ class ExamenController extends Controller
     /**
      * Store a newly created resource in storage.
      */
+
     public function store(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         try {
             // Check if xray_category is provided
             if (!$request->has('xray_category') || empty($request->xray_category)) {
@@ -116,7 +122,7 @@ class ExamenController extends Controller
             }
 
             // Check if xray_category exists or create it
-            $xrayCategory = Examen::withTrashed()
+            $xrayCategory = Examen::where('doctor_id', $doctorId)->withTrashed()
                 ->where('name', $request->xray_category)
                 ->first();
 
@@ -125,10 +131,8 @@ class ExamenController extends Controller
                 $xrayCategory->restore();
             } elseif (!$xrayCategory) {
                 // Create a new XrayCategory if it doesn't exist
-                $xrayCategory = Examen::create(['name' => $request->xray_category]);
+                $xrayCategory = Examen::create(['doctor_id' => $doctorId, 'name' => $request->xray_category]);
             }
-
-
 
             $validated = $request->validate([
                 'Examen_type' => 'required',
@@ -137,6 +141,7 @@ class ExamenController extends Controller
 
             // Create a new X-ray preference linked to the category
             $xray = Examenpreferences::create(array_merge($validated, [
+                'doctor_id' => $doctorId,
                 'Examen_category_id' => $xrayCategory->id,
             ]));
 
@@ -185,8 +190,9 @@ class ExamenController extends Controller
     public function destroy(string $id)
     {
         try {
+            $doctorId = $this->checkUserRole();
 
-            $xray = Examenpreferences::findOrFail($id);
+            $xray = Examenpreferences::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             $xray->delete();
             return $this->success(null, 'X-ray preference deleted successfully', 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {

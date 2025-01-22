@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Patient;
 use App\Traits\FileUpload;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Support\Str;
 use ZipArchive;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class fileuploadController extends Controller
 {
     use HttpResponses;
     use FileUpload;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
@@ -26,12 +28,14 @@ class fileuploadController extends Controller
     public function index(Request $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
+
             // Retrieve search query and pagination parameters
             $searchQuery = $request->input('searchQuery');
             $perPage = $request->get('per_page', 20);
 
             // Start the query
-            $query = file_upload::select('cluster', 'folder_path', 'created_at', 'type', 'patient_id')
+            $query = file_upload::where('doctor_id', $doctorId)->select('cluster', 'folder_path', 'created_at', 'type', 'patient_id')
                 ->groupBy('cluster', 'folder_path', 'created_at', 'type', 'patient_id');
 
             // Apply search filters if a query is provided
@@ -72,10 +76,11 @@ class fileuploadController extends Controller
     public function store(Request $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
 
             if ($request->hasFile('files')) {
 
-                $patient  = Patient::findorfail($request->patient_id);
+                $patient  = Patient::where('doctor_id', $doctorId)->where('id', $request->patient_id)->firstOrFail();
                 $patientFolder = $patient->p_folder;
 
                 $uploadedFiles = $request->file('files');
@@ -89,6 +94,7 @@ class fileuploadController extends Controller
                     $path = $this->UploadFile($uploadedFile, $patientFolder, '', 'public', $newFilename);
 
                     file_upload::create([
+                        'doctor_id' => $doctorId,
                         'patient_id' => $request->patient_id,
                         'original_name' => $originalFilename,
                         'folder_path' => $path,
@@ -119,17 +125,13 @@ class fileuploadController extends Controller
     public function show(Request $request, string $id)
     {
         try {
-            // Log the cluster id for debugging
-            Log::info("Cluster ID: " . $id);
+            $doctorId = $this->checkUserRole();
 
-            $patientClusters = file_upload::select('cluster', 'folder_path', DB::raw('MAX(`order`) as file_order'))
+            $patientClusters = file_upload::where('doctor_id', $doctorId)->select('cluster', 'folder_path', DB::raw('MAX(`order`) as file_order'))
                 ->where('cluster', $id)
                 ->groupBy('cluster', 'folder_path')
                 ->orderBy('file_order', 'asc') // Order by the aggregated order column
                 ->get();
-            // Log the query result for debugging
-            Log::info("Patient Clusters: ", $patientClusters->toArray());
-
             if ($patientClusters->isEmpty()) {
                 return response()->json(['error' => 'empty'], 404);
             }
@@ -151,20 +153,20 @@ class fileuploadController extends Controller
     public function uploadsInfo(Request $request)
     {
         try {
-            $patientClusters = file_upload::select('cluster', 'folder_path', 'created_at', 'patient_id', 'type', 'original_name')
+            $doctorId = $this->checkUserRole();
+
+            $patientClusters = file_upload::where('doctor_id', $doctorId)->select('cluster', 'folder_path', 'created_at', 'patient_id', 'type', 'original_name')
                 ->groupBy('cluster', 'folder_path', 'created_at', 'patient_id', 'type', 'original_name')
                 ->get();
 
             if ($patientClusters->isEmpty()) {
                 return response()->json(['error' => 'No files found for the patient', 'data' => []]);
             }
-
             $datesByClusters = [];
             $sizesByClusters = [];
             $clusterType = [];
             $clusterMime = [];
             $patients = [];
-
             foreach ($patientClusters as $file) {
                 $cluster = $file->cluster;
 
@@ -217,7 +219,9 @@ class fileuploadController extends Controller
     public function downloadZip(Request $request, $clusterId)
     {
         try {
-            $files = file_upload::where('cluster', $clusterId)->get();
+            $doctorId = $this->checkUserRole();
+
+            $files = file_upload::where('doctor_id', $doctorId)->where('cluster', $clusterId)->get();
             if ($files->isEmpty()) {
                 return response()->json(['error' => 'No files found for this cluster'], 404);
             }
@@ -259,8 +263,8 @@ class fileuploadController extends Controller
     public function destroy(string $id)
     {
         try {
-
-            $files = file_upload::where('cluster', $id)->get();
+            $doctorId = $this->checkUserRole();
+            $files = file_upload::where('doctor_id', $doctorId)->where('cluster', $id)->get();
             if ($files->isEmpty()) {
                 return $this->error(null, 'No cluster found', 404);
             }

@@ -13,12 +13,12 @@ return new class extends Migration
     {
         Schema::create('waiting_rooms', function (Blueprint $table) {
             $table->id();
-
-
+            $table->unsignedBigInteger('doctor_id');
             $table->unsignedBigInteger('patient_id');
             $table->timestamp('entry_time');
             $table->timestamps();
             $table->foreign('patient_id')->references('id')->on('patients')->onDelete('cascade');
+            $table->foreign('doctor_id')->references('id')->on('users')->onDelete('cascade');
         });
     }
 

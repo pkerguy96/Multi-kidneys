@@ -11,19 +11,20 @@ use Illuminate\Support\Facades\Hash;
 use App\Http\Resources\NurseResource;
 use App\Traits\HasPermissionCheck;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 
 class NurseController extends Controller
 {
     use HttpResponses;
     use HasPermissionCheck;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $this->authorizePermission(['superadmin']);
-
-        return new NurseCollection(User::where('role', 'nurse')->orderBy('id', 'desc')->get());
+        $doctorId = $this->checkUserRole(['superadmin']);
+        return new NurseCollection(User::where('doctor_id', $doctorId)->where('role', 'nurse')->orderBy('id', 'desc')->get());
     }
 
     /**
@@ -31,8 +32,7 @@ class NurseController extends Controller
      */
     public function store(StoreNurseRequest $request)
     {
-        $this->authorizePermission(['superadmin']);
-
+        $doctorId = $this->checkUserRole(['superadmin']);
         $authenticatedUserId = auth()->user();
         if ($authenticatedUserId->role === 'nurse') {
             return $this->error(null, 'Only doctors can create nurses!', 401);
@@ -50,14 +50,13 @@ class NurseController extends Controller
             $attributes['termination_date'] = $request->input('termination_date');
         }
         try {
-            $nurseCount = User::where('role', 'nurse')
+            $nurseCount = User::where('doctor_id', $doctorId)->where('role', 'nurse')
                 ->count();
 
             if ($nurseCount >= 6) {
                 return response()->json(['message' => "Vous ne pouvez avoir que jusqu'à six infirmières."], 400);
             }
-
-
+            $attributes['doctor_id'] = $doctorId;
             $data = new NurseResource(User::create($attributes));
             return $this->success($data, 'Nurse created successfully', 201);
         } catch (\Exception $e) {
@@ -86,8 +85,7 @@ class NurseController extends Controller
      */
     public function destroy(string $id)
     {
-        $this->authorizePermission(['superadmin']);
-
+        $doctorId = $this->checkUserRole(['superadmin']);
         try {
             $authenticatedUser = auth()->user();
 
@@ -97,7 +95,10 @@ class NurseController extends Controller
             }
 
             // Find the nurse by ID
-            $nurse = User::where('role', 'nurse')->find($id);
+            $nurse = User::where('doctor_id', $doctorId)
+                ->where('role', 'nurse')
+                ->where('id', $id)
+                ->first();
 
             // Check if the nurse exists
             if (!$nurse) {

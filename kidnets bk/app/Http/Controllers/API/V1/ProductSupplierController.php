@@ -15,11 +15,12 @@ class ProductSupplierController extends Controller
      */
     public function index(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $searchQuery = $request->input('searchQuery');
         $perPage = $request->get('per_page', 20); // Default to 20 items per page
 
         // Base query with eager loading
-        $query = ProductSupplier::with(['product' => function ($query) {
+        $query = ProductSupplier::where('doctor_id', $doctorId)->with(['product' => function ($query) {
             $query->withTrashed(); // Include soft-deleted products
         }, 'supplier'])->orderBy('id', 'desc');
 
@@ -46,6 +47,7 @@ class ProductSupplierController extends Controller
      */
     public function store(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $validated = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
             'product_id' => 'required|exists:products,id',
@@ -56,9 +58,10 @@ class ProductSupplierController extends Controller
             'invoice' => 'nullable|string',
         ]);
 
-        $product = Product::findOrFail($validated['product_id']);
+        $product = Product::where('doctor_id', $doctorId)->where('id', $validated['product_id'])->firstOrFail();
 
         ProductSupplier::create([
+            'doctor_id' => $doctorId,
             'supplier_id' => $validated['supplier_id'],
             'product_id' => $validated['product_id'],
             'quantity' => $validated['quantity'],
@@ -79,8 +82,8 @@ class ProductSupplierController extends Controller
      */
     public function show(string $id)
     {
-        $productSupplier = ProductSupplier::with(['product', 'supplier'])->find($id);
-
+        $doctorId = $this->checkUserRole();
+        $productSupplier = ProductSupplier::where('doctor_id', $doctorId)->with(['product', 'supplier'])->where('id', $id)->firstOrFail();
         // Check if the record exists
         if (!$productSupplier) {
             return response()->json([
@@ -100,6 +103,7 @@ class ProductSupplierController extends Controller
      */
     public function update(Request $request, string $id)
     {
+        $doctorId = $this->checkUserRole();
         // Validate incoming request data (exclude product_id)
         $validatedData = $request->validate([
             'supplier_id' => 'nullable|exists:suppliers,id',
@@ -111,7 +115,7 @@ class ProductSupplierController extends Controller
         ]);
 
         // Find the ProductSupplier record by ID
-        $productSupplier = ProductSupplier::find($id);
+        $productSupplier = ProductSupplier::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
         // Check if the record exists
         if (!$productSupplier) {
@@ -147,8 +151,9 @@ class ProductSupplierController extends Controller
      */
     public function destroy(string $id)
     {
+        $doctorId = $this->checkUserRole();
         // Find the record by its ID
-        $productSupplier = ProductSupplier::find($id);
+        $productSupplier = ProductSupplier::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
         if (!$productSupplier) {
             return response()->json([
                 'message' => "Impossible de trouver l'opération de stock",

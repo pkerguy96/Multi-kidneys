@@ -54,12 +54,9 @@ class PatientController extends Controller
     public function store(StorePatientRequest $request)
     {
         $doctorId = $this->checkUserRole(['superadmin', 'insert_patient', 'access_patient']);
-        Log::info($doctorId);
         try {
             $requestData = $request->validated();
             $requestData['doctor_id'] = $doctorId;
-            Log::info($requestData);
-
             $data = new PatientResource(Patient::create($requestData));
             return response()->json([
                 'message' => 'Patient created successfully',
@@ -127,7 +124,6 @@ class PatientController extends Controller
     public function patientTinyData(string $id)
     {
         $doctorId = $this->checkUserRole();
-
         $patient =  Patient::where('doctor_id', $doctorId)->where('id', $id)->select('nom', 'prenom')->first();
         return response()->json([
             'message' => 'Patient updated successfully.',

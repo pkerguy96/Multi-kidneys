@@ -6,20 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\OperationprefResource;
 use App\Models\OperationPref;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Http\Request;
 
 class OperationPrefsController extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Fetch all operation preferences
-            $operations = OperationPref::all();
-
+            $operations = OperationPref::where('doctor_id', $doctorId)->get();
             // Return a JSON response
             return  OperationprefResource::collection($operations);
         } catch (\Exception $e) {
@@ -37,6 +39,8 @@ class OperationPrefsController extends Controller
      */
     public function store(Request $request)
     {
+        $doctorId = $this->checkUserRole();
+
         try {
             // Validate the request data
             $validated = $request->validate([
@@ -44,7 +48,7 @@ class OperationPrefsController extends Controller
                 'price' => 'required|numeric|min:0',
                 'code' => 'nullable|string|max:50',
             ]);
-
+            $validated['doctor_id'] = $doctorId;
             // Create a new operation preference
             $operation = OperationPref::create($validated);
 
@@ -93,9 +97,11 @@ class OperationPrefsController extends Controller
      */
     public function destroy(string $id)
     {
+        $doctorId = $this->checkUserRole();
+
         try {
             // Find the operation preference by ID
-            $operation = OperationPref::findOrFail($id);
+            $operation = OperationPref::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
             // Delete the operation preference
             $operation->delete();

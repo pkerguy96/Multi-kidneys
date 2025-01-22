@@ -17,15 +17,18 @@ use App\Models\User;
 use App\Models\WaitingRoom;
 use App\Models\Xray;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class OperationStepsController extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /* First step we create op */
     public function storeOpNote(Request $request, $id)
     {
+        $doctorId = $this->checkUserRole();
         $validated = $request->validate([
             'note' => 'nullable|string',
             'operation' => 'nullable'
@@ -33,17 +36,19 @@ class OperationStepsController extends Controller
 
         try {
             // Find the patient or throw an exception
-            $patient = Patient::findOrFail($id);
+            $patient = Patient::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
             // Create the operation
 
-            $operation = isset($request->operation) ? Operation::findorfail($request->operation) : Operation::create([
+            $operation = isset($request->operation) ? Operation::where('doctor_id', $doctorId)->where('id', $request->operation)->firstorfail() : Operation::create([
+                'doctor_id' => $doctorId,
                 'patient_id' => $patient->id,
             ]);
 
             // If note exists, process it
             if (!empty($validated['note'])) {
                 OperationNote::create([
+                    'doctor_id' => $doctorId,
                     'operation_id' => $operation->id,
                     'note' => $validated['note'],
                     'patient_id' => $patient->id,
@@ -51,11 +56,12 @@ class OperationStepsController extends Controller
             }
 
             // Update or create a WaitingRoom entry
-            $waiting = WaitingRoom::where('patient_id', $patient->id)->first();
+            $waiting = WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $patient->id)->first();
             if ($waiting) {
                 $waiting->update(['status' => 'current']);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id' => $patient->id,
                     'entry_time' => now(),
@@ -75,16 +81,18 @@ class OperationStepsController extends Controller
     public function StoreParaclinique(StoreXrayRequest $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Validate request data
             $validatedData = $request->validated();
 
             $xrayItems = $validatedData['xrays']; // Expecting 'xrays' as an array
             $totalPrice = 0;
 
-            $operation = Operation::findOrFail($validatedData['operation_id']);
+            $operation = Operation::where('doctor_id', $doctorId)->where('id', $validatedData['operation_id'])->firstOrFail();
             foreach ($xrayItems as $xray) {
                 $totalPrice += $xray['price'];
                 $xrayData = [
+                    'doctor_id' => $doctorId,
                     'patient_id' => $validatedData['patient_id'],
                     'operation_id' => $operation->id,
                     'xray_type' => $xray['type'],
@@ -96,13 +104,14 @@ class OperationStepsController extends Controller
                 Xray::create($xrayData);
             }
             $operation->update(['total_cost' => $totalPrice]);
-            $waiting =   WaitingRoom::where('patient_id', $request->patient_id)->first();
+            $waiting =   WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->first();
             if ($waiting) {
                 $waiting->update([
                     'status' => 'current'
                 ]);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id'
                     => $request->patient_id,
@@ -119,24 +128,20 @@ class OperationStepsController extends Controller
     public function updateParaclinique(StoreXrayRequest $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Validate request data
             $validatedData = $request->validated();
-
             $xrayItems = $validatedData['xrays']; // Expecting 'xrays' as an array
             $totalPrice = 0;
-
             // Find the operation or fail
-            $operation = Operation::findOrFail($validatedData['operation_id']);
-            Log::info($validatedData['operation_id']);
-            Log::info($operation);
+            $operation = Operation::where('doctor_id', $doctorId)->where('id', $validatedData['operation_id'])->firstOrFail();
             // Delete all X-rays related to the operation ID
-            Xray::where('operation_id', $operation->id)->delete();
-
+            Xray::where('doctor_id', $doctorId)->where('operation_id', $operation->id)->delete();
             // Insert the new X-rays
             foreach ($xrayItems as $xray) {
                 $totalPrice += $xray['price'];
-
                 $xrayData = [
+                    'doctor_id' => $doctorId,
                     'patient_id' => $validatedData['patient_id'],
                     'operation_id' => $operation->id,
                     'xray_type' => $xray['type'],
@@ -152,13 +157,14 @@ class OperationStepsController extends Controller
             $operation->update(['total_cost' => $totalPrice]);
 
             // Update or create a waiting room entry
-            $waiting = WaitingRoom::where('patient_id', $request->patient_id)->first();
+            $waiting = WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->first();
             if ($waiting) {
                 $waiting->update([
                     'status' => 'current',
                 ]);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id' => $request->patient_id,
                     'entry_time' => Carbon::now(),
@@ -180,12 +186,14 @@ class OperationStepsController extends Controller
         ]);
 
         try {
+            $doctorId = $this->checkUserRole();
             // Find the patient or throw an exception
-            $patient = Patient::findOrFail($id);
+            $patient = Patient::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
             // If note exists, process it
             if (!empty($validated['note'])) {
                 OperationNote::updateOrCreate(
+                    ['doctor_id' => $doctorId],
                     ['operation_id' => $validated['operation_id']],
                     ['note' => $validated['note']],
                     ['patient_id' => $patient->id]
@@ -193,11 +201,12 @@ class OperationStepsController extends Controller
             }
 
             // Update or create a WaitingRoom entry
-            $waiting = WaitingRoom::where('patient_id', $patient->id)->first();
+            $waiting = WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $patient->id)->first();
             if ($waiting) {
                 $waiting->update(['status' => 'current']);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id' => $patient->id,
                     'entry_time' => now(),
@@ -217,14 +226,15 @@ class OperationStepsController extends Controller
     /* fetches */
     public function fetchNote($operation_id)
     {
-
-        $data = OperationNote::where('operation_id', $operation_id)->first() ?? [];
+        $doctorId = $this->checkUserRole();
+        $data = OperationNote::where('doctor_id', $doctorId)->where('operation_id', $operation_id)->first() ?? [];
         return $this->success($data, null, 200);
     }
     public function fetchXrays($operation_id)
     {
         try {
-            $data = Xray::where('operation_id', $operation_id)
+            $doctorId = $this->checkUserRole();
+            $data = Xray::where('doctor_id', $doctorId)->where('operation_id', $operation_id)
                 ->select('id', 'xray_name', 'xray_type', 'price')
                 ->get();
             if ($data->isEmpty()) {
@@ -238,8 +248,9 @@ class OperationStepsController extends Controller
     public function fetchOperationBloodTests($operationId)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Fetch blood tests based on operation_id
-            $rawBloodTests = BloodTest::where('operation_id', $operationId)->get();
+            $rawBloodTests = BloodTest::where('doctor_id', $doctorId)->where('operation_id', $operationId)->get();
 
             $formattedBloodTests = [];
 
@@ -262,31 +273,30 @@ class OperationStepsController extends Controller
     }
     public function getOrdonanceId($operationId)
     {
-        $data = Ordonance::with('OrdonanceDetails')->where('operation_id', $operationId)->select('id', 'date')->first();
+        $doctorId = $this->checkUserRole();
+        $data = Ordonance::where('doctor_id', $doctorId)->with('OrdonanceDetails')->where('operation_id', $operationId)->select('id', 'date')->first();
         return $this->success($data, null, 200);
     }
 
 
     public function deleteRadio($operationid)
     {
-        xray::where('operation_id', $operationid)->delete();
+        $doctorId = $this->checkUserRole();
+        xray::where('doctor_id', $doctorId)->where('operation_id', $operationid)->delete();
         $this->success(null, 'success', 200);
     }
 
     public function deleteBloodTest($operationid)
     {
-        Bloodtest::where('operation_id', $operationid)->delete();
-
+        $doctorId = $this->checkUserRole();
+        Bloodtest::where('doctor_id', $doctorId)->where('operation_id', $operationid)->delete();
         $this->success(null, 'success', 200);
     }
 
     public function deleteOrdonance($operationid)
     {
-        Log::info('ordonance op', [$operationid]);
-        Log::info('ordonance op', [Ordonance::where('operation_id', $operationid)->get()]);
-        Ordonance::where('operation_id', $operationid)->delete();
-
-
+        $doctorId = $this->checkUserRole();
+        Ordonance::where('doctor_id', $doctorId)->where('operation_id', $operationid)->delete();
         $this->success(null, 'success', 200);
     }
 }

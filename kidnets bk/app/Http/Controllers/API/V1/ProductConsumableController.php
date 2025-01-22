@@ -7,21 +7,24 @@ use App\Http\Resources\consumablesResource;
 use App\Http\Resources\productoperationpage;
 use App\Models\ProductOperationConsumables;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Http\Request;
 
 class ProductConsumableController extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $searchQuery = $request->input('searchQuery');
         $perPage = $request->get('per_page', 20); // Default to 20 items per page
 
         // Base query with eager loading
-        $query = ProductOperationConsumables::with(['Product', 'Operation.patient'])->orderBy('id', 'desc');
+        $query = ProductOperationConsumables::where('doctor_id', $doctorId)->with(['Product', 'Operation.patient'])->orderBy('id', 'desc');
 
         // Apply search filters
         if (!empty($searchQuery)) {
@@ -72,9 +75,8 @@ class ProductConsumableController extends Controller
     public function destroy(string $id)
     {
         try {
-
-            $consumable = ProductOperationConsumables::find($id);
-
+            $doctorId = $this->checkUserRole();
+            $consumable = ProductOperationConsumables::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             // Check if the record exists
             if (!$consumable) {
                 return $this->error(

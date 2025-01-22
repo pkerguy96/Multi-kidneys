@@ -74,21 +74,22 @@ class OrdonanceController extends Controller
                 ]);
             }
             DB::commit();
-            $waiting =   WaitingRoom::where('patient_id', $request->patient_id)->first();
-            //TODO: DIFFERENTIATE BETWEEN ORDONANCE OP AND REGULAR FOR WAITING LIST
+            $waiting =   WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->first();
+
             if ($waiting) {
                 $waiting->update([
                     'status' => 'current'
                 ]);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id'
                     => $request->patient_id,
                     'entry_time' => Carbon::now()
                 ]);
             }
-            $data = new OrdonanceResource(Ordonance::with('OrdonanceDetails')->where('id', $ordonance->id)->first());
+            $data = new OrdonanceResource(Ordonance::where('doctor_id', $doctorId)->with('OrdonanceDetails')->where('id', $ordonance->id)->first());
             // Return a response with the created Ordonance and OrdonanceDetails
             return response()->json([
                 'message' => 'Ordonance created successfully',
@@ -121,16 +122,15 @@ class OrdonanceController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        $this->checkUserRole(['superadmin', 'update_ordonance', 'access_ordonance']);
+        $doctorId =  $this->checkUserRole(['superadmin', 'update_ordonance', 'access_ordonance']);
         try {
 
-            $ordonance = Ordonance::findOrFail($id);
+            $ordonance = Ordonance::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();;
             // Start a database transaction
             DB::beginTransaction();
 
             // Update the Ordonance record with the new data
             $ordonance->update([
-
                 'patient_id' => $request->input('patient_id'),
                 'date' => $request->input('date'),
                 // Add any other fields you want to update
@@ -151,7 +151,7 @@ class OrdonanceController extends Controller
                 ]);
             }
             DB::commit();
-            $data = new OrdonanceResource(Ordonance::with('OrdonanceDetails')->find($ordonance->id));
+            $data = new OrdonanceResource(Ordonance::where('doctor_id', $doctorId)->with('OrdonanceDetails')->where('id', $ordonance->id)->firstOrFail());
             return response()->json([
                 'message' => 'Ordonance updated successfully',
                 'data' => $data,

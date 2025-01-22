@@ -8,23 +8,27 @@ use App\Models\hospital;
 use App\Models\Operation;
 use App\Models\outsourceOperation;
 use App\Models\Payment;
+use App\Traits\UserRoleCheck;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class HospitalOperationsController extends Controller
 {
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
+        $doctorId = $this->checkUserRole();
+
         $searchQuery = $request->input('searchQuery');
         $perPage = $request->get('per_page', 20);
         $isPaidFilter = $request->input('isPaid'); // Get the isPaid filter from the request
 
         // Base query with relationships
-        $query = OutsourceOperation::with([
+        $query = OutsourceOperation::where('doctor_id', $doctorId)->with([
             'hospital',
             'patient' => function ($query) {
                 $query->withTrashed(); // Include both deleted and non-deleted patients
@@ -67,6 +71,8 @@ class HospitalOperationsController extends Controller
     public function store(Request $request)
     {
         try {
+
+            $doctorId = $this->checkUserRole();
             // Validate the request payload
             $validated = $request->validate([
                 'hospital_id' => 'required|exists:hospitals,id',
@@ -83,8 +89,9 @@ class HospitalOperationsController extends Controller
             $isPaid = $validated['amount_paid'] >= $validated['total_price'];
 
             // Step 1: Create the operation
-            $operation = DB::transaction(function () use ($validated, $isPaid) {
+            $operation = DB::transaction(function () use ($validated, $isPaid, $doctorId) {
                 $operation = Operation::create([
+                    'doctor_id' => $doctorId,
                     'patient_id' => $validated['patient_id'],
                     'total_cost' => $validated['total_price'],
                     'is_paid' => $isPaid,
@@ -94,6 +101,7 @@ class HospitalOperationsController extends Controller
 
                 // Step 2: Create the outsource operation
                 outsourceOperation::create([
+                    'doctor_id' => $doctorId,
                     'hospital_id' => $validated['hospital_id'],
                     'patient_id' => $validated['patient_id'],
                     'operation_id' => $operation->id,
@@ -135,9 +143,10 @@ class HospitalOperationsController extends Controller
 
     public function searchHospitals(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $search = $request->input('searchQuery');
         $hospitals =
-            hospital::where(function ($query) use ($search) {
+            hospital::where('doctor_id', $doctorId)->where(function ($query) use ($search) {
                 $query->where('name', 'like', "%{$search}%");
             })->orderBy('id', 'desc')->get();
 
@@ -168,10 +177,12 @@ class HospitalOperationsController extends Controller
     {
 
         try {
-            // Find the outsource operation by ID
-            $outsourceOperation = OutsourceOperation::findOrFail($id);
+            $doctorId = $this->checkUserRole();
 
-            DB::transaction(function () use ($outsourceOperation) {
+            // Find the outsource operation by ID
+            $outsourceOperation = OutsourceOperation::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
+
+            DB::transaction(function () use ($outsourceOperation, $doctorId) {
                 // Delete the outsource operation first
                 $outsourceOperation->delete();
 
@@ -180,7 +191,7 @@ class HospitalOperationsController extends Controller
 
 
                 // Delete the related operation
-                $operationDeleted = Operation::where('id', $outsourceOperation->operation_id)->delete();
+                $operationDeleted = Operation::where('doctor_id', $doctorId)->where('id', $outsourceOperation->operation_id)->delete();
             });
 
             return response()->json(['message' => 'Operation and related records deleted successfully.'], 200);

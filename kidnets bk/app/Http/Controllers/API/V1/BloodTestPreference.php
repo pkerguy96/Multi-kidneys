@@ -118,7 +118,7 @@ class BloodTestPreference extends Controller
     public function destroy(string $id)
     {
         $doctorId = $this->checkUserRole();
-        $preference = ModelsBloodTestPreference::where('doctor_id', $doctorId)->firstOrFail($id);
+        $preference = ModelsBloodTestPreference::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
         if (!$preference) {
             return response()->json([

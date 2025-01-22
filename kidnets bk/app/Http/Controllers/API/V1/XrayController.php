@@ -24,10 +24,12 @@ use App\Models\Product;
 use App\Models\ProductOperationConsumables;
 use App\Models\User;
 use App\Models\WaitingRoom;
+use App\Traits\UserRoleCheck;
 
 class XrayController extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
@@ -42,6 +44,7 @@ class XrayController extends Controller
     public function store(StoreXrayRequest $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Validate request data
             $validatedData = $request->validated();
 
@@ -50,6 +53,7 @@ class XrayController extends Controller
 
             // Create the operation record first
             $operation = Operation::create([
+                'doctor_id' => $doctorId,
                 'patient_id' => $validatedData['patient_id'],
                 'total_cost' => 0, // Initialize with 0, will be updated later
                 'is_paid' => false,
@@ -59,6 +63,7 @@ class XrayController extends Controller
             foreach ($xrayItems as $xray) {
                 $totalPrice += $xray['price'];
                 $xrayData = [
+                    'doctor_id' => $doctorId,
                     'patient_id' => $validatedData['patient_id'],
                     'operation_id' => $operation->id,
                     'xray_type' => $xray['type'],
@@ -74,22 +79,20 @@ class XrayController extends Controller
             $operation->update(['total_cost' => $totalPrice]);
 
 
-            $waiting =   WaitingRoom::where('patient_id', $request->patient_id)->first();
+            $waiting =   WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->firstOrFail();
             if ($waiting) {
                 $waiting->update([
                     'status' => 'current'
                 ]);
             } else {
                 WaitingRoom::create([
+                    'doctor_id' => $doctorId,
                     'status' => 'current',
                     'patient_id'
                     => $request->patient_id,
                     'entry_time' => Carbon::now()
                 ]);
             }
-
-
-
             return $this->success($operation->id, 'Radiographies enregistrées avec succès', 201);
         } catch (\Throwable $th) {
             Log::error('Error storing x-ray data: ' . $th->getMessage());
@@ -106,10 +109,11 @@ class XrayController extends Controller
     {
 
         try {
-            if (!Operation::where('id', $id)->exists()) {
+            $doctorId = $this->checkUserRole();
+            if (!Operation::where('doctor_id', $doctorId)->where('id', $id)->exists()) {
                 return $this->error(null, 'xrays operation dosnt exist', 500);
             }
-            $xray = Xray::where('operation_id', $id)->get();
+            $xray = Xray::where('doctor_id', $doctorId)->where('operation_id', $id)->get();
             if (!$xray) {
                 return $this->error(null, 'no xray', 500);
             }
@@ -132,6 +136,7 @@ class XrayController extends Controller
     public function update(Request $request, string $id)
     {
         try {
+            $doctorId = $this->checkUserRole();
             // Step 1: Parse incoming x-ray data from rows
             $incomingXrays = collect($request->input('rows'));
 

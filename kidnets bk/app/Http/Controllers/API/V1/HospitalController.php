@@ -76,7 +76,7 @@ class HospitalController extends Controller
         $doctorId = $this->checkUserRole();
 
         try {
-            $hospital = Hospital::where('doctor_id', $doctorId)->firstOrFail($id);
+            $hospital = Hospital::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             // Check if hospital exists
             if (!$hospital) {
                 return response()->json([

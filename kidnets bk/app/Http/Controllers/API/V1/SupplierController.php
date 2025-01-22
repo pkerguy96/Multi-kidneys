@@ -7,29 +7,29 @@ use App\Http\Requests\StoreSupplierRequest;
 use App\Http\Resources\SupplierResource;
 use App\Http\Resources\SupplierResourceNameId;
 use App\Models\Supplier;
-use App\Traits\HasPermissionCheck;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
     use HttpResponses;
-    use HasPermissionCheck;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
-        $this->authorizePermission(['superadmin', 'access_supplier']);
 
+        $doctorId = $this->checkUserRole(['superadmin', 'access_supplier']);
         $searchQuery = $request->input('searchQuery');
 
         // Default query to paginate suppliers
-        $suppliers = Supplier::orderBy('id', 'desc')->paginate($request->get('per_page', 20));
+        $suppliers = Supplier::where('doctor_id', $doctorId)->orderBy('id', 'desc')->paginate($request->get('per_page', 20));
 
         if (!empty($searchQuery)) {
             // Apply search filters if a search query is provided
-            $suppliers = Supplier::where(function ($query) use ($searchQuery) {
+            $suppliers = Supplier::where('doctor_id', $doctorId)->where(function ($query) use ($searchQuery) {
                 $query->Where('address', 'like', "%{$searchQuery}%")
                     ->orWhere('phone', 'like', "%{$searchQuery}%")
                     ->orWhere('email', 'like', "%{$searchQuery}%")
@@ -46,10 +46,9 @@ class SupplierController extends Controller
     }
     public function showAllSuppliers()
     {
-        $this->authorizePermission(['superadmin', 'access_supplier']);
-
+        $doctorId = $this->checkUserRole(['superadmin', 'access_supplier']);
         try {
-            $suppliers =  Supplier::where('status', 'active')->get();
+            $suppliers =  Supplier::where('doctor_id', $doctorId)->where('status', 'active')->get();
             return SupplierResourceNameId::collection($suppliers);
         } catch (\Throwable $th) {
             return $this->error(null, $th->getMessage(), 500);
@@ -61,9 +60,10 @@ class SupplierController extends Controller
      */
     public function store(StoreSupplierRequest $request)
     {
-        $this->authorizePermission(['superadmin', 'add_supplier']);
-
-        $supplier = Supplier::create($request->validated());
+        $doctorId = $this->checkUserRole(['superadmin', 'add_supplier']);
+        $data = $request->validated();
+        $data['doctor_id'] = $doctorId;
+        $supplier = Supplier::create($data);
         return response()->json(['message' => 'Fournisseur créé avec succès.', 'data' => $supplier], 201);
     }
 
@@ -72,14 +72,11 @@ class SupplierController extends Controller
      */
     public function show(string $id)
     {
-        $this->authorizePermission(['superadmin', 'access_supplier']);
-
-        $supplier = Supplier::find($id);
-
+        $doctorId = $this->checkUserRole(['superadmin', 'access_supplier']);
+        $supplier = Supplier::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
         if (!$supplier) {
             return $this->error(null, 'Fournisseur non trouvé.', 404);
         }
-
         return new SupplierResource($supplier);
     }
     /**
@@ -87,9 +84,8 @@ class SupplierController extends Controller
      */
     public function update(StoreSupplierRequest $request, string $id)
     {
-        $this->authorizePermission(['superadmin', 'modify_supplier']);
-
-        $supplier = Supplier::find($id);
+        $doctorId = $this->checkUserRole(['superadmin', 'modify_supplier']);
+        $supplier = Supplier::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
 
         if (!$supplier) {
             return response()->json(['message' => 'Fournisseur non trouvé.'], 404);
@@ -104,15 +100,13 @@ class SupplierController extends Controller
      */
     public function destroy(string $id)
     {
-        $this->authorizePermission(['superadmin', 'delete_supplier']);
-
-        $supplier = Supplier::find($id);
-
+        $doctorId = $this->checkUserRole(['superadmin', 'delete_supplier']);
+        $supplier = Supplier::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
         if (!$supplier) {
             return response()->json(['message' => 'Fournisseur non trouvé.'], 404);
         }
 
-        $supplier->delete();
+        $supplier->delete(); 
         return response()->json(['message' => 'Fournisseur supprimé avec succès.'], 200);
     }
 }

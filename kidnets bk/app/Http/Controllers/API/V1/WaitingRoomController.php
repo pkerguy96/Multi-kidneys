@@ -12,18 +12,20 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Patient;
 use App\Http\Resources\PatientsWaitingRoomCollection;
 use App\Http\Resources\WaitingListCollection;
+use App\Traits\UserRoleCheck;
 
 class WaitingRoomController extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
         try {
-
-            $patientswaiting = WaitingRoom::count();
+            $doctorId = $this->checkUserRole();
+            $patientswaiting = WaitingRoom::where('doctor_id', $doctorId)->count();
             return $this->success($patientswaiting, 'success', 201);
         } catch (\Throwable $th) {
             $this->error($th->getMessage(), 'oops', 500);
@@ -32,17 +34,15 @@ class WaitingRoomController extends Controller
     public function addPatient(Request $request)
     {
         try {
-            // Assuming you pass `patient_id` in the request
+            $doctorId = $this->checkUserRole();
             $patientId = $request->input('patient_id');
-
             // Check if the patient is already in the waiting room
-            $existingPatient = WaitingRoom::where('patient_id', $patientId)->first();
+            $existingPatient = WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $patientId)->firstOrFail();
             if ($existingPatient) {
                 return $this->error(null, "Ce patient est déjà dans la salle d'attente.", 400);
             }
-
-            // Add a new entry in the waiting room for the patient
             WaitingRoom::create([
+                'doctor_id' => $doctorId,
                 'patient_id' => $patientId,
                 'entry_time' => now()
             ]);
@@ -57,18 +57,12 @@ class WaitingRoomController extends Controller
     public function decrementPatient($id)
     {
         try {
-
-
-            // Find the patient in the waiting room
-            $patientInQueue = WaitingRoom::where('id', $id)->first();
-
+            $doctorId = $this->checkUserRole();
+            $patientInQueue = WaitingRoom::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             if (!$patientInQueue) {
                 return $this->error(null, "Il n'y a pas de patient correspondant dans la salle d'attente", 400);
             }
-
-            // Remove the patient from the waiting room
             $patientInQueue->delete();
-
             return $this->success(null, 'Patient retiré de la salle d\'attente', 200);
         } catch (\Throwable $th) {
             return $this->error($th->getMessage(), 'oops', 500);
@@ -76,18 +70,16 @@ class WaitingRoomController extends Controller
     }
     public function tvwaitinglist()
     {
-        $waitingListQuery = WaitingRoom::with('patient')
-
+        $doctorId = $this->checkUserRole();
+        $waitingListQuery = WaitingRoom::where('doctor_id', $doctorId)->with('patient')
             ->orderBy('entry_time', 'asc')->get();
-
         return new WaitingListCollection($waitingListQuery);
     }
     public function resetPatientCounter()
     {
         try {
-            // Clear the waiting room table
-            WaitingRoom::truncate();
-
+            $doctorId = $this->checkUserRole();
+            WaitingRoom::where('doctor_id', $doctorId)->delete();
             return $this->success(null, 'Tous les patients ont été retirés de la salle d\'attente', 200);
         } catch (\Throwable $th) {
             return $this->error($th->getMessage(), 'oops', 500);
@@ -95,10 +87,10 @@ class WaitingRoomController extends Controller
     }
     public function PatientsWaitingRoom(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $searchQuery = $request->input('searchQuery');
-
         // Execute the query with ->get() to fetch the results
-        $patients = Patient::where(function ($query) use ($searchQuery) {
+        $patients = Patient::where('doctor_id', $doctorId)->where(function ($query) use ($searchQuery) {
             $query->where('nom', 'like', "%{$searchQuery}%")
                 ->orWhere('prenom', 'like', "%{$searchQuery}%");
         })
@@ -132,9 +124,10 @@ class WaitingRoomController extends Controller
 
     public function GetWaitingList(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         $searchQuery = $request->input('searchQuery'); // Retrieve search query from request
-        $count = WaitingRoom::where('status', 'completed')->count();
-        $waitingListQuery = WaitingRoom::with('patient')->where('status', '!=', 'completed') // Include 'patient' relationship
+        $count = WaitingRoom::where('doctor_id', $doctorId)->where('status', 'completed')->count();
+        $waitingListQuery = WaitingRoom::where('doctor_id', $doctorId)->with('patient')->where('status', '!=', 'completed') // Include 'patient' relationship
             ->orderByRaw("FIELD(status, 'current', 'pending', 'waiting')") // Custom order for statuses
             ->orderBy('entry_time', 'asc'); // Then order by entry_time
 
