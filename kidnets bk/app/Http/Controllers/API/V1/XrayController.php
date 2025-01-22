@@ -146,8 +146,8 @@ class XrayController extends Controller
             }
 
 
-            $operation = Operation::findOrFail($id); // Fetch the operation to adjust total_cost
-            $existingXrays = Xray::where('operation_id', $id)->get(); // Fetch existing x-rays for the operation
+            $operation = Operation::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail(); // Fetch the operation to adjust total_cost
+            $existingXrays = Xray::where('doctor_id', $doctorId)->where('operation_id', $id)->get(); // Fetch existing x-rays for the operation
 
 
             // Step 3: Identify deleted, new, and updated x-rays
@@ -179,6 +179,7 @@ class XrayController extends Controller
             /*       $newXrayTotalPrice = 0; */ // Initialize total price for new x-rays
             foreach ($newXrays as $xray) {
                 operation_detail::create([
+
                     'operation_id' => $id,
                     'operation_name' => $xray['xray_type'],
                     'price' => $xray['price'],
@@ -206,7 +207,7 @@ class XrayController extends Controller
             }
             $operation->save(); // Save the updated operation details
 
-            $waiting =   WaitingRoom::where('patient_id', $request->patient_id)->first();
+            $waiting =   WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->firstOrFail();
             if ($waiting) {
                 $waiting->update([
                     'status' => 'completed'
@@ -218,7 +219,7 @@ class XrayController extends Controller
             foreach ($consomables as $consomable) {
                 $productid = $consomable['consomable'];
                 $quantity = $consomable['qte'];
-                $product = Product::where('id', $productid)->first();
+                $product = Product::where('doctor_id', $doctorId)->where('id', $productid)->firstOrFail();
 
                 if ($product) {
                     if ($product->qte < $quantity) {
@@ -231,6 +232,7 @@ class XrayController extends Controller
                     $product->save();
                     //consomables
                     ProductOperationConsumables::create([
+                        'doctor_id' => $doctorId,
                         'operation_id' => $operation->id,
                         'product_id' => $product->id,
                         'quantity' => $quantity,
@@ -238,7 +240,7 @@ class XrayController extends Controller
 
                     if ($product->qte < $product->min_stock) {
 
-                        $users = User::all();
+                        $users = User::where('doctor_id', $doctorId)->get();
                         foreach ($users as $user) {
                             Notification::create([
                                 'user_id' => $user->id,
@@ -256,8 +258,8 @@ class XrayController extends Controller
                     ], 400);
                 }
             }
-            $nurses = User::where('role', 'nurse')->get();
-            $patient = Patient::where('id', $request->input('patient_id'))->first(['nom', 'prenom']);
+            $nurses = User::where('doctor_id', $doctorId)->where('role', 'nurse')->get();
+            $patient = Patient::where('doctor_id', $doctorId)->where('id', $request->input('patient_id'))->first(['nom', 'prenom']);
             // Create notifications for each nurse
             foreach ($nurses as $nurse) {
                 Notification::create([
@@ -277,8 +279,10 @@ class XrayController extends Controller
 
     public function insertWihtoutxray(Request $request)
     {
+        $doctorId = $this->checkUserRole();
         // Step 1: Create a new operation
         $operation = Operation::create([
+            'doctor_id' => $doctorId,
             'patient_id' => $request->input('patient_id'),
             'total_cost' => 0, // Initialize total_cost to 0
             'is_paid' => 0,
@@ -314,7 +318,7 @@ class XrayController extends Controller
         foreach ($consomables as $consomable) {
             $productid = $consomable['consomable'];
             $quantity = $consomable['qte'];
-            $product = Product::where('id', $productid)->first();
+            $product = Product::where('doctor_id', $doctorId)->where('id', $productid)->firstOrFail();
             if ($product) {
                 if ($product->qte < $quantity) {
                     return response()->json([
@@ -327,13 +331,14 @@ class XrayController extends Controller
 
                 //consomables
                 ProductOperationConsumables::create([
+                    'doctor_id' => $doctorId,
                     'operation_id' => $operation->id,
                     'product_id' => $product->id,
                     'quantity' => $quantity,
                 ]);
                 if ($product->qte < $product->min_stock) {
 
-                    $users = User::all();
+                    $users = User::where('doctor_id', $doctorId)->get();
                     foreach ($users as $user) {
                         Notification::create([
                             'user_id' => $user->id,
@@ -358,14 +363,14 @@ class XrayController extends Controller
         }
 
         $operation->save();
-        $waiting =   WaitingRoom::where('patient_id', $request->patient_id)->first();
+        $waiting =   WaitingRoom::where('doctor_id', $doctorId)->where('patient_id', $request->patient_id)->firstOrFail();
         if ($waiting) {
             $waiting->update([
                 'status' => 'completed'
             ]);
         }
-        $nurses = User::where('role', 'nurse')->get();
-        $patient = Patient::where('id', $request->input('patient_id'))->first(['nom', 'prenom']);
+        $nurses = User::where('doctor_id', $doctorId)->where('role', 'nurse')->get();
+        $patient = Patient::where('doctor_id', $doctorId)->where('id', $request->input('patient_id'))->first(['nom', 'prenom']);
 
         // Create notifications for each nurse
         foreach ($nurses as $nurse) {

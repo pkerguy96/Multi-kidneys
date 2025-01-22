@@ -8,25 +8,25 @@ use App\Http\Resources\XraypreferenceResource;
 use App\Models\XrayCategory;
 use App\Models\Xraypreference;
 use App\Traits\HttpResponses;
+use App\Traits\UserRoleCheck;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class Xraypreferences extends Controller
 {
     use HttpResponses;
+    use UserRoleCheck;
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
+        $doctorId = $this->checkUserRole();
         try {
             // Eager-load xray_category relationship
-            $xrays = Xraypreference::with(['xray_category' => function ($query) {
+            $xrays = Xraypreference::where('doctor_id', $doctorId)->with(['xray_category' => function ($query) {
                 $query->withTrashed();
             }])->get();
-
-
-
             return XraypreferenceResource::collection($xrays);
         } catch (\Exception $e) {
             // Log the error for debugging
@@ -42,8 +42,10 @@ class Xraypreferences extends Controller
 
     public function getxrayCategorys()
     {
+        $doctorId = $this->checkUserRole();
+
         try {
-            $categorys = XrayCategory::select('id', 'name')->get();
+            $categorys = XrayCategory::where('doctor_id', $doctorId)->select('id', 'name')->get();
             return $this->success($categorys, 'success', 200);
         } catch (\Throwable $th) {
             return $this->success($th->getMessage(), 'Something went wrong', 500);
@@ -51,9 +53,11 @@ class Xraypreferences extends Controller
     }
     public function deleteCategory($id)
     {
+        $doctorId = $this->checkUserRole();
+
         try {
             // Find the category by ID
-            $category = XrayCategory::findOrFail($id);
+            $category = XrayCategory::where('doctor_id', $doctorId)->findOrFail($id);
 
             // Delete the category
             $category->delete();
