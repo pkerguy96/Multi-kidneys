@@ -14,11 +14,13 @@ return new class extends Migration
         Schema::create('waiting_room_logs', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('doctor_id');
+            $table->unsignedBigInteger('patient_id');
             $table->string('waiting_room_id');
             $table->string('status');
             $table->timestamp('status_changed_at')->useCurrent();
             $table->timestamps();
             $table->foreign('doctor_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('patient_id')->references('id')->on('patients');
         });
     }
 

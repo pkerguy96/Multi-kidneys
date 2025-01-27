@@ -33,7 +33,14 @@ class StorePatientRequest extends FormRequest
             ],
             'address' => ['required'],
             'sex' => ['required', Rule::in(['male', 'female'])],
-            'phone_number' => ['required', 'numeric', 'digits_between:8,12'],
+            'phone_number' => [
+                'required',
+                'numeric',
+                'digits_between:8,12',
+                Rule::unique('patients')->where(function ($query) {
+                    return $query->where('doctor_id', $this->input('doctor_id'));
+                }),
+            ],
             'mutuelle' => ['required'],
             'allergy' => ['nullable', 'string'],
             'disease' => ['nullable', 'string'],
@@ -44,6 +51,7 @@ class StorePatientRequest extends FormRequest
     public function prepareForValidation()
     {
         $this->merge([
+            'doctor_id' => auth()->user()->doctor_id ?? auth()->id(),
             'phone_number' => $this->phoneNumber,
             'allergy' => isset($this->allergy) ? implode(',', $this->allergy) : null,
             'disease' => isset($this->disease) ? implode(',', $this->disease) : null,

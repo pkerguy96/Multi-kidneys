@@ -142,6 +142,8 @@ class Xraypreferences extends Controller
     public function store(Request $request)
     {
         try {
+            $doctorId = $this->checkUserRole();
+
             // Check if xray_category is provided
             if (!$request->has('xray_category') || empty($request->xray_category)) {
                 return response()->json([
@@ -151,7 +153,7 @@ class Xraypreferences extends Controller
             }
 
             // Check if xray_category exists or create it
-            $xrayCategory = XrayCategory::withTrashed()
+            $xrayCategory = XrayCategory::where('doctor_id', $doctorId)->withTrashed()
                 ->where('name', $request->xray_category)
                 ->first();
 
@@ -160,7 +162,7 @@ class Xraypreferences extends Controller
                 $xrayCategory->restore();
             } elseif (!$xrayCategory) {
                 // Create a new XrayCategory if it doesn't exist
-                $xrayCategory = XrayCategory::create(['name' => $request->xray_category]);
+                $xrayCategory = XrayCategory::create(['doctor_id' => $doctorId, 'name' => $request->xray_category]);
             }
 
 
@@ -172,6 +174,7 @@ class Xraypreferences extends Controller
 
             // Create a new X-ray preference linked to the category
             $xray = Xraypreference::create(array_merge($validated, [
+                'doctor_id' => $doctorId,
                 'xray_category_id' => $xrayCategory->id,
             ]));
 
@@ -200,8 +203,9 @@ class Xraypreferences extends Controller
     public function getXrayPreferencesWithCategories()
     {
         try {
+            $doctorId = $this->checkUserRole();
 
-            $xrayPreferences = Xraypreference::with(['xray_category' => function ($query) {
+            $xrayPreferences = Xraypreference::where('doctor_id', $doctorId)->with(['xray_category' => function ($query) {
                 $query->withTrashed(); // Include soft-deleted categories
             }])->get();
 
@@ -253,13 +257,9 @@ class Xraypreferences extends Controller
     public function destroy(string $id)
     {
         try {
-            Log::info($id);
-            // Find the X-ray preference by ID
-            $xray = Xraypreference::findOrFail($id);
-            Log::info($xray);
-            // Delete the X-ray preference
+            $doctorId = $this->checkUserRole();
+            $xray = Xraypreference::where('doctor_id', $doctorId)->where('id', $id)->firstOrFail();
             $xray->delete();
-
             // Return a success response
             return $this->success(null, 'X-ray preference deleted successfully', 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {

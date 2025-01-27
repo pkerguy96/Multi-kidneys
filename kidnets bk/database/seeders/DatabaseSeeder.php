@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             ExamenSeeder::class,
             XraySeeder::class,
-            BloodTestPreferenceSeeder::class
+            /*  BloodTestPreferenceSeeder::class */
         ]);
     }
 }

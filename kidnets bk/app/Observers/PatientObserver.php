@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\Patient;
 use App\Models\WaitingRoom;
+use Illuminate\Support\Facades\Auth;
 
 class PatientObserver
 {
@@ -12,7 +13,10 @@ class PatientObserver
      */
     public function created(Patient $patient): void
     {
+        $user = Auth::user();
+        $doctorId = $user->role === 'nurse' ? $user->doctor_id : $user->id;
         WaitingRoom::create([
+            'doctor_id' => $doctorId,
             'patient_id' => $patient->id,
             'status' => 'waiting',
             'entry_time' => now()
